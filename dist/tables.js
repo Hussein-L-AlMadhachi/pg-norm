@@ -4,6 +4,7 @@ export class PG_Table {
     table_name;
     visibles;
     sql;
+    max_rows_fetched = 50;
     async alter() {
         throw new Error("You need to overwrite this method. this is where your ALTER TABLE statement goes");
     }
@@ -28,8 +29,21 @@ export class PG_Table {
     async fetch(row_id) {
         return await this.sql `SELECT ${this.sql(this.visibles)} FROM ${this.sql(this.table_name)} WHERE id=${row_id}`;
     }
-    async list() {
-        return await this.sql `SELECT ${this.sql(this.visibles)} FROM ${this.sql(this.table_name)}`;
+    async list(limit = 50, page_number = 0) {
+        const rows_limit = Math.min(Math.round(limit), this.max_rows_fetched);
+        const rows_offset = Math.max(Math.round(page_number), 0) * rows_limit;
+        return await this.sql `
+            SELECT ${this.sql(this.visibles)}
+            FROM ${this.sql(this.table_name)}
+            LIMIT ${rows_limit}
+            OFFSET ${rows_offset}
+        `;
+    }
+    async listAll() {
+        return await this.sql `
+            SELECT ${this.sql(this.visibles)}
+            FROM ${this.sql(this.table_name)}
+        `;
     }
     async delete(row_id) {
         return await this.sql `DELETE FROM ${this.sql(this.table_name)} WHERE id=${row_id}`;
@@ -48,8 +62,10 @@ export class PG_Table {
 export class PG_AuthTable extends PG_Table {
     passwordField = "password_hash";
     table_name;
-    constructor(pg_connection, name, fillables = []) {
+    identify_user_by;
+    constructor(pg_connection, name, fillables = [], identify_user_by = "username") {
         super(pg_connection, name, fillables);
+        this.identify_user_by = identify_user_by;
         this.table_name = name;
     }
     /**
@@ -85,11 +101,11 @@ export class PG_AuthTable extends PG_Table {
     /**
      * Verify password against stored hash
      */
-    async verifyPassword(userId, plainTextPassword) {
+    async verifyPassword(user_identifier, plainTextPassword) {
         const [user] = await this.sql `
             SELECT ${this.sql(this.passwordField)} 
             FROM ${this.sql(this.table_name)} 
-            WHERE id = ${userId}
+            WHERE ${this.identify_user_by} = ${user_identifier}
         `;
         if (!user || !user[this.passwordField]) {
             // Perform dummy comparison to prevent side channel and timing attacks (they're hardware exploits)
@@ -114,6 +130,7 @@ export class PG_Ledger {
     visibles;
     create;
     sql;
+    max_rows_fetched = 50;
     constructor(pg_app, name, fillables) {
         this.sql = pg_app.sql;
         this.table_name = name;
@@ -158,14 +175,27 @@ export class PG_Ledger {
     async fetch(row_id) {
         return await this.sql `SELECT ${this.sql(this.visibles)} FROM ${this.sql(this.table_name)} WHERE id=${row_id}`;
     }
-    async list() {
-        return await this.sql `SELECT ${this.sql(this.visibles)} FROM ${this.sql(this.table_name)}`;
+    async list(limit = 50, page_number = 0) {
+        const rows_limit = Math.min(Math.round(limit), this.max_rows_fetched);
+        const rows_offset = Math.max(Math.round(page_number), 0) * rows_limit;
+        return await this.sql `
+            SELECT ${this.sql(this.visibles)}
+            FROM ${this.sql(this.table_name)}
+            LIMIT ${rows_limit}
+            OFFSET ${rows_offset}
+        `;
+    }
+    async listAll() {
+        return await this.sql `
+            SELECT ${this.sql(this.visibles)}
+            FROM ${this.sql(this.table_name)}
+        `;
     }
     async delete(row_id) {
-        throw new Error("this is a ledger!!! do not delete or update anything!!! this is not allowed");
+        throw new Error("ledgers are immutable!!! you cannot delete from them");
     }
     async update(row_id) {
-        throw new Error("this is a ledger!!! do not delete or update anything!!! this is not allowed");
+        throw new Error("ledgers are immutable!!! you cannot update any row in them");
     }
 }
 //# sourceMappingURL=tables.js.map
