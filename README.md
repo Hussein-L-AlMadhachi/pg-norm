@@ -343,5 +343,3 @@ class OrdersTable extends PG_Table {
 ## License
 
 MIT © Hussein Layth Al-Madhachi
-
----
