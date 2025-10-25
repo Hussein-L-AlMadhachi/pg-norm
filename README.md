@@ -342,7 +342,7 @@ class OrdersTable extends PG_Table {
 
 ## License
 
-MIT © Hussein Layth Kadhim Al-Madhachi
+MIT © Hussein Layth Al-Madhachi
 
 ---
 
