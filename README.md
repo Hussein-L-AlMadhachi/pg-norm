@@ -6,56 +6,27 @@
 
 Think of it as a **NoORM** (Not an ORM)—a lightweight toolkit that gives you model-like classes with basic CRUD operations so you can focus on writing expressive, performant, and maintainable SQL.
 
----
-
 ## Table of Contents
 
 - [PG-NORM (PostgreSQL NoORM)](#pg-norm-postgresql-noorm)
   - [Table of Contents](#table-of-contents)
-  - [Why PG-NORM?](#why-pg-norm)
   - [Installation](#installation)
   - [Quick Start](#quick-start)
     - [Configure your database (`src/db.ts`)](#configure-your-database-srcdbts)
-    - [Define a model (`src/models.ts`)](#define-a-model-srcmodelsts)
   - [Core Concepts](#core-concepts)
-    - [1. Basic Tables (`PG_Table`)](#1-basic-tables-pg_table)
-    - [2. Authentication Tables (`PG_AuthTable`)](#2-authentication-tables-pg_authtable)
-    - [3. Ledger Tables (`PG_Ledger`)](#3-ledger-tables-pg_ledger)
+    - [Basic Tables (PG\_Table)](#basic-tables-pg_table)
+    - [Authentication Tables (PG\_AuthTable)](#authentication-tables-pg_authtable)
+    - [Ledger Tables (PG\_Ledger)](#ledger-tables-pg_ledger)
   - [API Reference](#api-reference)
-    - [`PG_App`](#pg_app)
-    - [`PG_Table`](#pg_table)
-    - [`PG_AuthTable` (extends `PG_Table`)](#pg_authtable-extends-pg_table)
-    - [`PG_Ledger` (immutable)](#pg_ledger-immutable)
+    - [PG\_App](#pg_app)
+    - [PG\_Table Properties](#pg_table-properties)
+    - [PG\_Table Methods](#pg_table-methods)
+    - [PG\_AuthTable (extends PG\_Table)](#pg_authtable-extends-pg_table)
+    - [PG\_Ledger (immutable)](#pg_ledger-immutable)
   - [Security Features](#security-features)
   - [Best Practices](#best-practices)
   - [Example: E-commerce Application](#example-e-commerce-application)
   - [License](#license)
-
----
-
-## Why PG-NORM?
-
-**Traditional ORMs and query builders often fall short:**
-
-- ❌ Hide powerful PostgreSQL-specific features  
-- ❌ Require verbose code for transactions  
-- ❌ Introduce performance bottlenecks on complex queries  
-- ❌ Force you to “fight SQL” instead of using it directly  
-- ❌ Recreate SQL logic in JavaScript—defeating the purpose
-
-**PG-NORM empowers you with:**
-
-- ✅ Full access to raw SQL—leverage every PostgreSQL feature  
-- ✅ Built-in migrations and table management  
-- ✅ Automatic SQL injection protection via `postgres.js` tagged templates  
-- ✅ Sensible defaults for CRUD without hiding the database  
-- ✅ Easy extensibility: write custom queries as methods  
-- ✅ First-class TypeScript support  
-- ✅ Immutable ledgers and secure auth out of the box  
-
-> SQL was designed for databases. JavaScript wasn’t. PG-NORM lets you use the right tool for the job.
-
----
 
 ## Installation
 
@@ -66,8 +37,6 @@ npm install
 ```
 
 > The `create-pg-norm` starter includes a ready-to-use project scaffold.
-
----
 
 ## Quick Start
 
@@ -104,71 +73,27 @@ export const app = new PG_App({
 });
 ```
 
-### Define a model (`src/models.ts`)
-
-```ts
-import { PG_App, PG_AuthTable } from 'pg-norm';
-import { app } from './db.js';
-
-class UsersTable extends PG_AuthTable {
-  constructor(pg_app: PG_App) {
-    super(pg_app, 'users', ['name', 'email', 'age']);
-  }
-
-  async create() {
-    await this.sql`
-      CREATE TABLE users (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        age INTEGER,
-        password_hash TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `;
-  }
-
-  async findAdults() {
-    return this.sql`
-      SELECT ${this.sql(this.visibles)}
-      FROM ${this.sql(this.table_name)}
-      WHERE age >= 18
-      ORDER BY name ASC
-    `;
-  }
-}
-
-// Register and use
-const usersTable = new UsersTable(app);
-app.register(usersTable);
-
-// Basic usage
-await usersTable.insert({ 
-  name: 'John', 
-  email: 'john@example.com', 
-  age: 25, 
-  password: 'pass1234' 
-});
-
-const user = await usersTable.fetch(1);
-const adults = await usersTable.findAdults();
-```
-
----
-
 ## Core Concepts
 
-### 1. Basic Tables (`PG_Table`)
+### Basic Tables (PG_Table)
 
 For standard CRUD operations with full SQL control.
 
 ```ts
+import { PG_Table, PG_App } from "pg-norm";
+import { app } from "./db.js";
+
 class ProductsTable extends PG_Table {
   constructor(pg_app: PG_App) {
-    super(pg_app, 'products', ['name', 'price', 'category']);
+    //      app,   table_name,        visible columns
+    super( pg_app, 'products', ['name', 'price', 'category']);
+    
+    // Change the maximum data this.list() can fetch (default: 50)
+    // this.max_rows_fetched = 50;
   }
 
-  async create() {
+  public async create() {
+    // Important: always create a column named 'id'
     await this.sql`
       CREATE TABLE products (
         id SERIAL PRIMARY KEY,
@@ -180,6 +105,12 @@ class ProductsTable extends PG_Table {
     `;
   }
 
+  public async alter() {
+    // Use this method to update your schema
+    // Remove this method if you have no schema changes
+  }
+
+  // Write custom query methods
   async findByCategory(category: string) {
     return this.sql`
       SELECT ${this.sql(this.visibles)}
@@ -188,47 +119,92 @@ class ProductsTable extends PG_Table {
     `;
   }
 }
+
+// Register table for CLI commands support
+export const products = new ProductsTable(app);
+app.register(products);
 ```
 
-### 2. Authentication Tables (`PG_AuthTable`)
+**Available CRUD Methods:**
+
+```ts
+// Basic CRUD operations (you can override these)
+await products.listAll();           // List all rows (only visible columns)
+await products.fetch(1);            // Fetch row with id 1 (only visible columns)
+await products.list(50, 2);         // List second 50 rows (respects max_rows_fetched)
+await products.update(1, {...});    // Update row with id 1 (only visible columns)
+await products.insert({...});       // Insert new row (only visible columns)
+await products.delete(1);           // Delete row with id 1
+```
+
+### Authentication Tables (PG_AuthTable)
 
 Handles password hashing (bcrypt), verification, and secure updates.
 
 ```ts
+import { PG_AuthTable } from "pg-norm";
+
 class UsersTable extends PG_AuthTable {
   constructor(pg_app: PG_App) {
-    super(pg_app, 'users', ['username', 'email']);
+    //      app   ,  table_name ,     visible columns     , identify_user_by
+    super( pg_app ,   'users'   , ['name', 'email', 'age'],     "email"      );
   }
 
   async create() {
+    // Important: create 'id', 'password_hash', and your "identify_user_by" field
     await this.sql`
       CREATE TABLE users (
         id SERIAL PRIMARY KEY,
-        username VARCHAR(50) UNIQUE NOT NULL,
+        name VARCHAR(100) NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
-        password_hash VARCHAR(255) NOT NULL,
+        age INTEGER,
+        password_hash TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `;
   }
 }
 
-// Usage
-await users.insert({ username: 'alice', email: 'a@example.com', password: 'secret' });
-const isValid = await users.verifyPassword(1, 'secret');
+const users = new UsersTable(app);
+app.register(users);
 ```
 
-### 3. Ledger Tables (`PG_Ledger`)
+**Authentication Methods:**
+
+```ts
+// Insert with password hashing
+await users.insert({ 
+  name: 'John', 
+  email: 'john@example.com', 
+  age: 25, 
+  password: 'plaintext_password'  // Will be hashed automatically
+});
+
+// Password management
+await users.updatePassword(1, "new_password");
+const isValid = await users.verifyPassword("john@example.com", "password_to_check");
+```
+
+**Important Notes:**
+
+1. You must create a `password_hash` column and your identifying field (e.g., `email`)
+2. Use the `password` field when inserting (not `password_hash`)
+3. `update()` cannot update passwords (use `updatePassword()` instead)
+
+### Ledger Tables (PG_Ledger)
 
 Immutable tables—ideal for audit logs, financial records, or event sourcing.
 
 ```ts
+import { PG_Ledger } from "pg-norm";
+
 class TransactionLedger extends PG_Ledger {
   constructor(pg_app: PG_App) {
     super(pg_app, 'transactions', ['from_account', 'to_account', 'amount', 'type']);
   }
 
-  async create() {
+  // Note: method name is createTable() for ledgers
+  public async createTable() {
     await this.sql`
       CREATE TABLE transactions (
         id SERIAL PRIMARY KEY,
@@ -242,65 +218,75 @@ class TransactionLedger extends PG_Ledger {
   }
 }
 
+const transactions = new TransactionLedger(app);
+app.register(transactions);
+```
+
+**Allowed Operations:**
+
+```ts
 // ✅ Allowed
-await ledger.insert({ from_account: 1, to_account: 2, amount: 100, type: 'transfer' });
+await transactions.insert({ from_account: 1, to_account: 2, amount: 100, type: 'transfer' });
+await transactions.listAll();
+await transactions.list(50, 2);
+await transactions.fetch(1);
 
 // ❌ Throws error: ledgers are immutable
-// await ledger.update(1, { amount: 200 });
-// await ledger.delete(1);
+// await transactions.update(1, { amount: 200 });
+// await transactions.delete(1);
 ```
 
 > PG-NORM enforces immutability both in code **and** via PostgreSQL Row-Level Security (RLS).
 
----
-
 ## API Reference
 
-### `PG_App`
+### PG_App
 
 - `new PG_App(options)` – Initialize connection (uses `postgres.js` options)
 - `.register(table)` – Register a table instance
 - `.createTables()` – Create all registered tables
+- `.alterTables()` – Alter all registered tables
 
-### `PG_Table`
+### PG_Table Properties
 
-- `.insert(data)` – Insert record
-- `.fetch(id)` – Get by ID
-- `.list()` – Get all
-- `.update(id, data)` – Update record
+- `.table_name` – Stores table name
+- `.visibles` – Stores columns visible to CRUD operations
+- `.max_rows_fetched` – Maximum rows `list()` can fetch (default: 50)
+
+### PG_Table Methods
+
+- `.insert(data)` – Insert record (only visible columns)
+- `.fetch(id)` – Get by ID (only visible columns)
+- `.listAll()` – Get all rows (only visible columns)
+- `.list(page_size, page_number)` – Get paginated results
+- `.update(id, data)` – Update record (only visible columns)
 - `.delete(id)` – Delete record
 
-### `PG_AuthTable` (extends `PG_Table`)
+### PG_AuthTable (extends PG_Table)
 
-- `.verifyPassword(userId, plainText)` → `Promise<boolean>`
-- `.updatePassword(userId, newPassword)` – Securely rehash
+- `.verifyPassword(identifier, plainText)` → `Promise<boolean>`
+- `.updatePassword(id, newPassword)` – Securely rehash password
 
-### `PG_Ledger` (immutable)
+### PG_Ledger (immutable)
 
-- Only `.insert()` is allowed
-- Updates/deletes throw runtime errors
+- Only `.insert()`, `.fetch()`, `.listAll()`, and `.list()` are allowed
 - Enforced at the database level via RLS
-
----
+- Updates/deletes throw runtime errors
 
 ## Security Features
 
 - 🔒 **SQL Injection Protection**: All queries use parameterized `sql`` templates
 - 🔑 **Password Security**: Automatic bcrypt hashing with configurable rounds
 - 🛡️ **Immutable Ledgers**: RLS policies prevent tampering—even via direct SQL
-- 🧪 **Field Whitelisting**: Only declared `visibles` fields can be inserted/updated
-
----
+- 🧪 **Field Whitelisting**: Only declared `visibles` columns can be selected/inserted/updated
 
 ## Best Practices
 
-1. **Extend, don’t replace**: Add domain-specific query methods to your table classes
+1. **Extend, don't replace**: Add domain-specific query methods to your table classes
 2. **Use ledgers for history**: Financial data, logs, or any append-only use case
 3. **Validate early**: Rely on PostgreSQL constraints + visible field filtering
 4. **Write raw SQL**: Take full advantage of CTEs, window functions, JSON, etc.
 5. **Type everything**: Use TypeScript interfaces for query results when needed
-
----
 
 ## Example: E-commerce Application
 
@@ -337,8 +323,6 @@ class OrdersTable extends PG_Table {
   }
 }
 ```
-
----
 
 ## License
 

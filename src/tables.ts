@@ -14,13 +14,17 @@ export interface TableBase {
 
 export class PG_Table implements TableBase {
 
+
     public table_name: string;
     public visibles: string[];
     protected sql:PG_Connection;
+    protected max_rows_fetched:number = 50;
+
 
     public async alter() {
         throw new Error("You need to overwrite this method. this is where your ALTER TABLE statement goes");
     }
+
 
     constructor( pg_app:PG_App , name:string , feilds:string[] ){
         this.sql = pg_app.sql;
@@ -28,9 +32,11 @@ export class PG_Table implements TableBase {
         this.visibles = feilds;
     }
 
+
     public async create(){
         throw new Error("You need to overwrite this method. this is where your CREATE TABLE statement goes");
     } // to be overwritten
+
 
     public async insert( data:Record<string,any> ) {
         const keys = Object.keys( data );
@@ -45,17 +51,38 @@ export class PG_Table implements TableBase {
         return await this.sql`INSERT INTO ${  this.sql(this.table_name)  } ${  this.sql(data , ...keys)  } returning id`; 
     }
 
+
     public async fetch( row_id:number ) {
         return await this.sql`SELECT ${ this.sql(this.visibles) } FROM ${this.sql(this.table_name)} WHERE id=${row_id}`;
     }
 
-    public async list() {
-        return await this.sql`SELECT ${ this.sql(this.visibles) } FROM ${this.sql(this.table_name)}`;
+
+    public async list(limit: number = 50, page_number: number = 0) {
+
+        const rows_limit = Math.min( Math.round(limit) , this.max_rows_fetched);
+        const rows_offset = Math.max( Math.round(page_number), 0) * rows_limit;
+
+        return await this.sql`
+            SELECT ${this.sql(this.visibles)}
+            FROM ${this.sql(this.table_name)}
+            LIMIT ${rows_limit}
+            OFFSET ${rows_offset}
+        `;
     }
+
+
+    public async listAll() {
+        return await this.sql`
+            SELECT ${this.sql(this.visibles)}
+            FROM ${this.sql(this.table_name)}
+        `;
+    }
+
 
     public async delete( row_id:number ) {
         return await this.sql`DELETE FROM ${this.sql(this.table_name)} WHERE id=${row_id}`;
     }
+
 
     public async update( row_id:number , data:Record<string,any> ) {
         const keys = Object.keys( data );
@@ -70,19 +97,27 @@ export class PG_Table implements TableBase {
         return await this.sql`UPDATE ${this.sql(this.table_name)} SET ${  this.sql( data , ...keys )  } where id=${row_id} returning id`;
     }
 
+
 }
+
+
 
 
 
 export class PG_AuthTable extends PG_Table {
 
+
     protected passwordField:string = "password_hash";
     public table_name: string;
+    protected identify_user_by: string;
 
-    constructor(pg_connection:PG_App , name: string, fillables: string[] = []) {
-        super(pg_connection, name ,  fillables );
+
+    constructor(pg_connection:PG_App , name: string, fillables: string[] = [] , identify_user_by:string="username" ) {
+        super(pg_connection, name , fillables );
+        this.identify_user_by = identify_user_by;
         this.table_name = name;
     }
+
 
     /**
      * Override insert to hash password automatically
@@ -105,6 +140,7 @@ export class PG_AuthTable extends PG_Table {
         return await this.sql`INSERT INTO ${this.sql(this.table_name)} ${this.sql(data, ...keys)} RETURNING id`;
     }
 
+
     /**
      * Update password method with secure hashing
      */
@@ -119,14 +155,15 @@ export class PG_AuthTable extends PG_Table {
         `;
     }
 
+
     /**
      * Verify password against stored hash
      */
-    public async verifyPassword(userId: number, plainTextPassword: string): Promise<boolean> {
+    public async verifyPassword(user_identifier: string, plainTextPassword: string): Promise<boolean> {
         const [user] = await this.sql`
             SELECT ${this.sql(this.passwordField)} 
             FROM ${this.sql(this.table_name)} 
-            WHERE id = ${userId}
+            WHERE ${this.identify_user_by} = ${user_identifier}
         `;
 
         if (!user || !user[this.passwordField]) {
@@ -137,7 +174,6 @@ export class PG_AuthTable extends PG_Table {
 
         return await bcrypt.compare(plainTextPassword, user[this.passwordField]);
     }
-
 
 
     /**
@@ -157,12 +193,14 @@ export class PG_AuthTable extends PG_Table {
 
 
 
+
 export class PG_Ledger implements TableBase {
 
     public table_name: string;
     public visibles: string[];
     public readonly create: ()=>Promise<void>;
     protected sql: PG_Connection;
+    protected max_rows_fetched:number = 50;
 
     constructor( pg_app:PG_App , name:string , fillables:string[] ){
         this.sql = pg_app.sql;
@@ -218,18 +256,33 @@ export class PG_Ledger implements TableBase {
         return await this.sql`SELECT ${ this.sql(this.visibles) } FROM ${this.sql(this.table_name)} WHERE id=${row_id}`;
     }
 
-    public async list() {
-        return await this.sql`SELECT ${ this.sql(this.visibles) } FROM ${this.sql(this.table_name)}`;
+    public async list(limit: number = 50, page_number: number = 0) {
+
+        const rows_limit = Math.min( Math.round(limit) , this.max_rows_fetched);
+        const rows_offset = Math.max( Math.round(page_number), 0) * rows_limit;
+
+        return await this.sql`
+            SELECT ${this.sql(this.visibles)}
+            FROM ${this.sql(this.table_name)}
+            LIMIT ${rows_limit}
+            OFFSET ${rows_offset}
+        `;
     }
 
+    public async listAll() {
+        return await this.sql`
+            SELECT ${this.sql(this.visibles)}
+            FROM ${this.sql(this.table_name)}
+        `;
+    }
 
     public async delete( row_id:number ) {
-        throw new Error( "this is a ledger!!! do not delete or update anything!!! this is not allowed" )
+        throw new Error( "ledgers are immutable!!! you cannot delete from them" );
     }
 
 
     public async update( row_id:number ) {
-        throw new Error( "this is a ledger!!! do not delete or update anything!!! this is not allowed" )
+        throw new Error( "ledgers are immutable!!! you cannot update any row in them" );
     }
 
 }
