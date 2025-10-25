@@ -1,6 +1,6 @@
 {
   "name": "pg-norm",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "makes SQL easy and fun to write as if you you're using an ORM (No-ORM=NORM)",
   "license": "MIT",
   "author": "Hussein Layth Al-Madhachi",
