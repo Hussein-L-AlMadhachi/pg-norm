@@ -1,0 +1,25 @@
+{
+  "name": "pg-norm",
+  "version": "0.0.1",
+  "description": "makes SQL easy and fun to write as if you you're using an ORM (No-ORM=NORM)",
+  "license": "MIT",
+  "author": "Hussein Layth Al-Madhachi",
+  "type": "module",
+  "main": "dist/pg-norm.js",
+  "scripts": {
+    "dev":"tsc"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/node": "^24.9.1"
+  },
+  "repository": {
+  "type": "git",
+  "url": "git+https://github.com/Hussein-L-Al-Madhachi/pg-norm.git"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "postgres": "^3.4.7"
+  },
+  "keywords": ["postgres", "pg", "postgres.js", "orm", "noorm", "norm", "pgnorm", "pg-norm" , "sql", "database"]
+}
