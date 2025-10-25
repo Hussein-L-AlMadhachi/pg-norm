@@ -345,5 +345,3 @@ class OrdersTable extends PG_Table {
 MIT © Hussein Layth Al-Madhachi
 
 ---
-
-Let me know if you'd like a version optimized for GitHub (e.g., with badges, contribution guidelines, or deployment notes)!
