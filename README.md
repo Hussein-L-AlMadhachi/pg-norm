@@ -183,6 +183,18 @@ await users.insert({
 // Password management
 await users.updatePassword(1, "new_password");
 const isValid = await users.verifyPassword("john@example.com", "password_to_check");
+
+const user_id = await users.idAfterAuth("john@example.com", "password_to_check");
+if ( user_id === undefined ){
+  throw new Error("Wrong username or password")
+}
+
+const user = await users.fetchAfterAuth("john@example.com", "password_to_check" , ["id","name","email"] );
+if ( user === undefined ){
+  throw new Error("Wrong username or password")
+}
+// now you can use user.id, user.name ,user.email
+
 ```
 
 **Important Notes:**
@@ -265,6 +277,8 @@ await transactions.fetch(1);
 ### PG_AuthTable (extends PG_Table)
 
 - `.verifyPassword(identifier, plainText)` → `Promise<boolean>`
+- `.idAfterAuth(identifier, plainText)` → `Promise<number|undefined>`
+- `.fetchAfterAuth(identifier, plainText , columns)` → `Promise<Record<string,any>|undefined>`
 - `.updatePassword(id, newPassword)` – Securely rehash password
 
 ### PG_Ledger (immutable)
