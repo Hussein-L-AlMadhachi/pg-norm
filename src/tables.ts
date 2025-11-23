@@ -164,7 +164,7 @@ export class PG_AuthTable extends PG_Table {
         const [user] = await this.sql`
             SELECT ${this.sql(this.passwordField)} 
             FROM ${this.sql(this.table_name)} 
-            WHERE ${this.identify_user_by} = ${user_identifier}
+            WHERE ${this.sql(this.identify_user_by)} = ${user_identifier}
         `;
 
         if (!user || !user[this.passwordField]) {
@@ -184,7 +184,7 @@ export class PG_AuthTable extends PG_Table {
         const [user] = await this.sql`
             SELECT ${this.sql(this.passwordField, "id")}
             FROM ${this.sql(this.table_name)} 
-            WHERE ${this.identify_user_by} = ${user_identifier}
+            WHERE ${this.sql(this.identify_user_by)} = ${user_identifier}
         `;
 
         if (!user || !user[this.passwordField]) {
@@ -210,7 +210,7 @@ export class PG_AuthTable extends PG_Table {
         const [user] = await this.sql`
             SELECT ${this.sql(this.passwordField, ...columns)}
             FROM ${this.sql(this.table_name)} 
-            WHERE ${this.identify_user_by} = ${user_identifier}
+            WHERE ${this.sql(this.identify_user_by)} = ${user_identifier}
         `;
 
         if (!user || !user[this.passwordField]) {
@@ -280,7 +280,7 @@ export class PG_Ledger implements TableBase {
                 FOR DELETE
                 USING (false);
 
-                CREATE OR REPLACE FUNCTION ${`${this.table_name}_block_all_updates()`}
+                CREATE OR REPLACE FUNCTION ${this.sql(`${this.table_name}_block_all_updates()`)}
                 RETURNS TRIGGER AS $$
                 BEGIN
                     RAISE EXCEPTION 'Table "%" is immutable. Updates are not allowed.', TG_TABLE_NAME;
@@ -290,13 +290,13 @@ export class PG_Ledger implements TableBase {
 
                 -- Attach to your ledger table
                 CREATE TRIGGER ${ this.sql(`${this.table_name}_prevent_update_trigger`) } 
-                    BEFORE UPDATE ON ${this.table_name}
-                    FOR EACH ROW ALWAYS EXECUTE FUNCTION ${`${this.table_name}_block_all_updates()`};
+                    BEFORE UPDATE ON ${this.sql(this.table_name)}
+                    FOR EACH ROW ALWAYS EXECUTE FUNCTION ${this.sql(`${this.table_name}_block_all_updates()`)};
 
 
-                REVOKE TRUNCATE ON ${this.table_name} FROM PUBLIC;
+                REVOKE TRUNCATE ON ${this.sql(this.table_name)} FROM PUBLIC;
 
-                CREATE OR REPLACE FUNCTION ${`${this.table_name}_block_truncate()`}
+                CREATE OR REPLACE FUNCTION ${this.sql(`${this.table_name}_block_truncate()`)}
                 RETURNS TRIGGER AS $$
                 BEGIN
                     RAISE EXCEPTION 'Table "%" is immutable. TRUNCATE is not allowed.', TG_TABLE_NAME;
@@ -306,12 +306,12 @@ export class PG_Ledger implements TableBase {
 
                 -- Attach TRUNCATE trigger to your ledger table
                 CREATE TRIGGER ${ this.sql(`${this.table_name}_prevent_truncate_trigger`) }
-                    BEFORE TRUNCATE ON ${this.table_name}
-                    FOR EACH STATEMENT ALWAYS EXECUTE FUNCTION ${`${this.table_name}_block_truncate()`};
+                    BEFORE TRUNCATE ON ${this.sql(this.table_name)}
+                    FOR EACH STATEMENT ALWAYS EXECUTE FUNCTION ${this.sql(`${this.table_name}_block_truncate()`)};
 
 
                 -- Creating a trigger function that blocks ALL deletes
-                CREATE OR REPLACE FUNCTION ${`${this.table_name}_block_all_deletes()`}
+                CREATE OR REPLACE FUNCTION ${this.sql(`${this.table_name}_block_all_deletes()`)}
                 RETURNS TRIGGER AS $$
                 BEGIN
                     RAISE EXCEPTION 'Table "%" is immutable. DELETES are not allowed.', TG_TABLE_NAME;
@@ -321,8 +321,8 @@ export class PG_Ledger implements TableBase {
 
                 -- Attach DELETE trigger to your ledger table
                 CREATE TRIGGER ${ this.sql(`${this.table_name}_prevent_any_deletes_trigger`) } 
-                    BEFORE DELETE ON ${this.table_name}
-                    FOR EACH ROW ALWAYS EXECUTE FUNCTION ${`${this.table_name}_block_all_deletes()`};
+                    BEFORE DELETE ON ${this.sql(this.table_name)}
+                    FOR EACH ROW ALWAYS EXECUTE FUNCTION ${this.sql(`${this.table_name}_block_all_deletes()`)};
 
                 -- enabling ALWAYS on triggers
                 ALTER TABLE ${this.sql(this.table_name)}
@@ -359,7 +359,7 @@ export class PG_Ledger implements TableBase {
             }
         }
 
-        return await this.sql`INSERT INTO ${  this.sql(this.table_name)  } ${  this.sql(data , ...keys)  } returning id`; 
+        return await this.sql`INSERT INTO ${  this.sql(this.table_name)  } ${  this.sql(data , ...keys)  } RETURNING id`; 
     }
 
     public async fetch( row_id:number ) {
