@@ -21,9 +21,7 @@ export class PG_Table implements TableBase {
     protected max_rows_fetched:number = 50;
 
 
-    public async alter() {
-        throw new Error("You need to overwrite this method. this is where your ALTER TABLE statement goes");
-    }
+    public async alter() {}
 
 
     constructor( pg_app:PG_App , name:string , feilds:string[] ){
