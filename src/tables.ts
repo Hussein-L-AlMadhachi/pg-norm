@@ -20,6 +20,9 @@ export class PG_Table implements TableBase {
     protected sql:PG_Connection;
     protected max_rows_fetched:number = 50;
 
+    toString() {
+        return this.table_name;
+    }
 
     public async alter() {}
 
@@ -248,7 +251,11 @@ export class PG_Ledger implements TableBase {
     public visibles: string[];
     public readonly create: ()=>Promise<void>;
     protected sql: PG_Connection;
-    protected max_rows_fetched:number = 50;
+    protected max_rows_fetched: number = 50;
+    
+    toString() {
+        return this.table_name;
+    }
 
     constructor( pg_app:PG_App , name:string , fillables:string[] ){
         this.sql = pg_app.sql;
