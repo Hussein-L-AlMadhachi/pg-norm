@@ -5,7 +5,7 @@ export type PG_Connection = ReturnType<typeof postgres>;
 
 
 
-import { type TableBase } from "./tables.js";
+import { type TableBase } from "./pg_table.js";
 
 
 

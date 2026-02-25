@@ -16,13 +16,13 @@ Think of it as a **NoORM** (Not an ORM)—a lightweight toolkit that gives you m
   - [Core Concepts](#core-concepts)
     - [Basic Tables (PG\_Table)](#basic-tables-pg_table)
     - [Authentication Tables (PG\_AuthTable)](#authentication-tables-pg_authtable)
-    - [Ledger Tables (PG\_Ledger)](#ledger-tables-pg_ledger)
+    - [Soft Delete Tables (PG\_SoftDeleteTable)](#soft-delete-tables-pg_softtable)
+    - [Nesting queries in transactions](#nesting-queries-in-transactions)
   - [API Reference](#api-reference)
     - [PG\_App](#pg_app)
     - [PG\_Table Properties](#pg_table-properties)
     - [PG\_Table Methods](#pg_table-methods)
     - [PG\_AuthTable (extends PG\_Table)](#pg_authtable-extends-pg_table)
-    - [PG\_Ledger (immutable)](#pg_ledger-immutable)
   - [Security Features](#security-features)
   - [Best Practices](#best-practices)
   - [Example: E-commerce Application](#example-e-commerce-application)
@@ -85,8 +85,14 @@ import { app } from "./db.js";
 
 class ProductsTable extends PG_Table {
   constructor(pg_app: PG_App) {
-    //      app,   table_name,        visible columns
-    super( pg_app, 'products', ['name', 'price', 'category']);
+    //      app,   table_name,
+    super( pg_app, 'products',
+      {
+        select:['name', 'price', 'category'],
+        insert:['name', 'price', 'category'],
+        update:['name', 'price', 'category']
+      }
+    );
     
     // Change the maximum data this.list() can fetch (default: 50)
     // this.max_rows_fetched = 50;
@@ -113,7 +119,7 @@ class ProductsTable extends PG_Table {
   // Write custom query methods
   async findByCategory(category: string) {
     return this.sql`
-      SELECT ${this.sql(this.visibles)}
+      SELECT ${this.sql(this.selectables)}
       FROM ${this.sql(this.table_name)}
       WHERE category = ${category}
     `;
@@ -129,12 +135,20 @@ app.register(products);
 
 ```ts
 // Basic CRUD operations (you can override these)
-await products.listAll();           // List all rows (only visible columns)
-await products.fetch(1);            // Fetch row with id 1 (only visible columns)
-await products.list(50, 2);         // List second 50 rows (respects max_rows_fetched)
-await products.update(1, {...});    // Update row with id 1 (only visible columns)
-await products.insert({...});       // Insert new row (only visible columns)
-await products.delete(1);           // Delete row with id 1
+await products.listAll();                           // List all rows (only visible columns)
+await products.fetch(1);                           // Fetch row with id 1 (only visible columns)
+await products.list(50, 2);                        // List 50 rows starting after id 2 (respects max_rows_fetched)
+await products.update(1, {...});                   // Update row with id 1 (only visible columns)
+await products.insert({...});                      // Insert new row (only visible columns)
+await products.delete(1);                          // Delete row with id 1
+
+// All methods support optional transaction parameter
+await products.listAll(tx_sql);                    // Execute within transaction
+await products.fetch(1, tx_sql);
+await products.list(50, 2, tx_sql);
+await products.update(1, {...}, tx_sql);
+await products.insert({...}, tx_sql);
+await products.delete(1, tx_sql);
 ```
 
 ### Authentication Tables (PG_AuthTable)
@@ -146,8 +160,15 @@ import { PG_AuthTable } from "pg-norm";
 
 class UsersTable extends PG_AuthTable {
   constructor(pg_app: PG_App) {
-    //      app   ,  table_name ,     visible columns     , identify_user_by
-    super( pg_app ,   'users'   , ['name', 'email', 'age'],     "email"      );
+    //      app   ,  table_name , 
+    super( pg_app ,   'users'   , 
+      {
+        select: ['name', 'email', 'age'],   //permissions you set for each column
+        update: ['name', 'email', 'age'], 
+        insert: ['name', 'email', 'age']
+      },
+      "email" // how do you identify your user for login
+    );
   }
 
   async create() {
@@ -203,52 +224,206 @@ if ( user === undefined ){
 2. Use the `password` field when inserting (not `password_hash`)
 3. `update()` cannot update passwords (use `updatePassword()` instead)
 
-### Ledger Tables (PG_Ledger)
+### Soft Delete Tables (PG_SoftDeleteTable)
 
-Immutable tables—ideal for audit logs, financial records, or event sourcing.
+Implements soft delete functionality where records are marked as deleted instead of being permanently removed. This is useful for maintaining data history and allowing record restoration.
 
 ```ts
-import { PG_Ledger } from "pg-norm";
+import { PG_SoftDeleteTable } from "pg-norm";
 
-class TransactionLedger extends PG_Ledger {
+class OrdersTable extends PG_SoftDeleteTable {
   constructor(pg_app: PG_App) {
-    super(pg_app, 'transactions', ['from_account', 'to_account', 'amount', 'type']);
+    super(pg_app, 'orders', {
+      select: ['user_id', 'product_id', 'quantity', 'total_price', 'status'],
+      insert: ['user_id', 'product_id', 'quantity', 'total_price', 'status'],
+      update: ['quantity', 'total_price', 'status']
+    });
+    // Optionally customize the soft delete column (default: 'deleted_at')
+    // this.softDeleteColumn = 'archived_at';
   }
 
-  // Note: method name is createTable() for ledgers
-  public async createTable() {
+  async create() {
+    // Important: create a timestamp column to track soft deletes
     await this.sql`
-      CREATE TABLE transactions (
+      CREATE TABLE orders (
         id SERIAL PRIMARY KEY,
-        from_account INTEGER NOT NULL,
-        to_account INTEGER NOT NULL,
-        amount DECIMAL(15,2) NOT NULL CHECK (amount > 0),
-        type VARCHAR(20) NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        product_id INTEGER NOT NULL REFERENCES products(id),
+        quantity INTEGER NOT NULL DEFAULT 1,
+        total_price DECIMAL(10,2) NOT NULL,
+        status VARCHAR(50) DEFAULT 'pending',
+        deleted_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `;
   }
+
+  async alter() {}
 }
 
-const transactions = new TransactionLedger(app);
-app.register(transactions);
+const orders = new OrdersTable(app);
+app.register(orders);
 ```
 
-**Allowed Operations:**
+**Soft Delete Methods:**
 
 ```ts
-// ✅ Allowed
-await transactions.insert({ from_account: 1, to_account: 2, amount: 100, type: 'transfer' });
-await transactions.listAll();
-await transactions.list(50, 2);
-await transactions.fetch(1);
+// Soft delete - marks record as deleted without removing it
+await orders.delete(1);              // Sets deleted_at = NOW()
 
-// ❌ Throws error: ledgers are immutable
-// await transactions.update(1, { amount: 200 });
-// await transactions.delete(1);
+// List all active (non-deleted) records only
+await orders.listAll();              // Only returns rows where deleted_at IS NULL
+
+// Fetch active record (returns undefined if soft-deleted)
+await orders.fetch(1);               // Only returns row if deleted_at IS NULL
+
+// List paginated active records
+await orders.list(50, 2);            // Paginate through non-deleted records
+
+// List all deleted records
+await orders.listAllDeleted();       // Returns all soft-deleted records
+
+// Fetch deleted record
+await orders.fetchDeleted(1);        // Returns only the deleted record
+
+// List paginated deleted records
+await orders.listDeleted(50, 2);     // Paginate through soft-deleted records
+
+// Restore a soft-deleted record
+await orders.restore(1);             // Sets deleted_at = NULL
+
+// Permanently remove a record (hard delete)
+await orders.hardDelete(1);         // Permanently removes the record from database
 ```
 
-> PG-NORM enforces immutability both in code **and** via PostgreSQL Row-Level Security (RLS).
+**Key Features:**
+
+- Records are marked with a timestamp instead of being deleted
+- Active record queries (listAll(), fetch(), list()) exclude soft-deleted records
+- Dedicated methods for querying deleted records: listAllDeleted(), fetchDeleted(), listDeleted()
+- restore() method reactivates soft-deleted records
+- hardDelete() available for permanent removal when needed
+- Customize the soft delete column name via this.softDeleteColumn
+- All methods support optional transaction parameter for use within transactions
+
+### Nesting queries in transactions
+
+consider these two tables:
+
+```ts
+import { PG_Table, PG_App } from "pg-norm";
+import { app } from "./db.js";
+
+class OrdersTable extends PG_Table {
+  constructor(pg_app: PG_App) {
+    super(pg_app, 'orders',
+      {
+        select: ['user_id', 'product_id', 'quantity', 'total_price', 'status'],
+        insert: ['user_id', 'product_id', 'quantity', 'total_price', 'status'],
+        update: ['quantity', 'total_price', 'status']
+      }
+    );
+  }
+
+  public async create() {
+    await this.sql`
+      CREATE TABLE orders (
+        id           SERIAL PRIMARY KEY,
+        user_id      INTEGER NOT NULL REFERENCES users(id),
+        product_id   INTEGER NOT NULL REFERENCES products(id),
+        quantity     INTEGER NOT NULL DEFAULT 1,
+        total_price  DECIMAL(10,2) NOT NULL,
+        status       VARCHAR(50) DEFAULT 'pending',
+        created_at   TIMESTAMP DEFAULT NOW()
+      )
+    `;
+  }
+
+  public async alter() {}
+}
+```
+
+```ts
+import { PG_Table, PG_App } from "pg-norm";
+import { app } from "./db.js";
+
+class ProductsTable extends PG_Table {
+  constructor(pg_app: PG_App) {
+    //      app,   table_name,
+    super( pg_app, 'products',
+      {
+        select:['name', 'price', 'category','available'],
+        insert:['name', 'price', 'category','available'],
+        update:['name', 'price', 'category','available']
+      }
+    );
+    
+    // Change the maximum data this.list() can fetch (default: 50)
+    // this.max_rows_fetched = 50;
+  }
+
+  public async create() {
+    // Important: always create a column named 'id'
+    await this.sql`
+      CREATE TABLE products (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(200) NOT NULL,
+        price DECIMAL(10,2) NOT NULL,
+        category VARCHAR(50),
+        available INTEGER
+      )
+    `;
+  }
+
+  public async alter() {
+    // Use this method to update your schema
+    // Remove this method if you have no schema changes
+  }
+
+  async findByCategory(category: string) {
+    return this.sql`
+      SELECT ${this.sql(this.selectables)}
+      FROM ${this.sql(this.table_name)}
+      WHERE category = ${category}
+    `;
+  }
+
+  public async order( product_id: number, user_id: number, quantity: number , sql_obj=null) {
+
+    // automatically if sql_obj is passed this will pick it up
+    // otherwise it will execute the query normally without any transactions
+    const sql = this.external_sql( sql_obj );
+
+    await sql.begin(async (tx_sql) => {
+
+      // Decrement available stock
+      const [product] = await tx_sql`
+        UPDATE ${sql(this.table_name)}
+        SET available = available - ${quantity}
+        WHERE id = ${product_id}
+        RETURNING price
+      `;
+
+      // Insert a matching order row inside the same transaction
+      await orders.insert(
+        {
+          user_id,
+          product_id,
+          quantity,
+          total_price: product.price * quantity,
+          status: 'pending',
+        },
+        tx_sql  // pass the transaction sql object so both queries share the same transaction
+      );
+
+    });
+  } 
+
+}
+
+```
+
+
 
 ## API Reference
 
@@ -262,17 +437,19 @@ await transactions.fetch(1);
 ### PG_Table Properties
 
 - `.table_name` – Stores table name
-- `.visibles` – Stores columns visible to CRUD operations
+- `.selectables` – Stores columns visible to select operations
+- `.updatables` – Stores columns visible to update operations
+- `.insertables` – Stores columns visible to insert operations
 - `.max_rows_fetched` – Maximum rows `list()` can fetch (default: 50)
 
 ### PG_Table Methods
 
-- `.insert(data)` – Insert record (only visible columns)
-- `.fetch(id)` – Get by ID (only visible columns)
-- `.listAll()` – Get all rows (only visible columns)
-- `.list(page_size, page_number)` – Get paginated results
-- `.update(id, data)` – Update record (only visible columns)
-- `.delete(id)` – Delete record
+- `.insert(data, sql_obj?)` – Insert record (only insertable columns)
+- `.fetch(id, sql_obj?)` – Get by ID (only selectable columns)
+- `.listAll(sql_obj?)` – Get all rows (only selectable columns)
+- `.list(limit, last_id, sql_obj?)` – Get paginated results (only selectable columns)
+- `.update(id, data, sql_obj?)` – Update record (only updatable columns)
+- `.delete(id, sql_obj?)` – Delete record
 
 ### PG_AuthTable (extends PG_Table)
 
@@ -281,62 +458,18 @@ await transactions.fetch(1);
 - `.fetchAfterAuth(identifier, plainText , columns)` → `Promise<Record<string,any>|undefined>`
 - `.updatePassword(id, newPassword)` – Securely rehash password
 
-### PG_Ledger (immutable)
+### PG_SoftDeleteTable (extends PG_Table)
 
-- Only `.insert()`, `.fetch()`, `.listAll()`, and `.list()` are allowed
-- Enforced at the database level via RLS
-- Updates/deletes throw runtime errors
-
-## Security Features
-
-- 🔒 **SQL Injection Protection**: All queries use parameterized `sql`` templates
-- 🔑 **Password Security**: Automatic bcrypt hashing with configurable rounds
-- 🛡️ **Immutable Ledgers**: RLS policies prevent tampering—even via direct SQL
-- 🧪 **Field Whitelisting**: Only declared `visibles` columns can be selected/inserted/updated
-
-## Best Practices
-
-1. **Extend, don't replace**: Add domain-specific query methods to your table classes
-2. **Use ledgers for history**: Financial data, logs, or any append-only use case
-3. **Validate early**: Rely on PostgreSQL constraints + visible field filtering
-4. **Write raw SQL**: Take full advantage of CTEs, window functions, JSON, etc.
-5. **Type everything**: Use TypeScript interfaces for query results when needed
-
-## Example: E-commerce Application
-
-```ts
-class OrdersTable extends PG_Table {
-  constructor(pg_app: PG_App) {
-    super(pg_app, 'orders', ['user_id', 'total', 'status']);
-  }
-
-  async create() {
-    await this.sql`
-      CREATE TABLE orders (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        total DECIMAL(10,2) NOT NULL,
-        status VARCHAR(20) DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `;
-  }
-
-  async getUserOrders(userId: number) {
-    return this.sql`
-      SELECT o.*,
-             json_agg(
-               json_build_object('product_id', oi.product_id, 'quantity', oi.quantity)
-             ) AS items
-      FROM orders o
-      LEFT JOIN order_items oi ON o.id = oi.order_id
-      WHERE o.user_id = ${userId}
-      GROUP BY o.id
-      ORDER BY o.created_at DESC
-    `;
-  }
-}
-```
+- `.softDeleteColumn` – Stores the column name for soft delete timestamps (default: `'deleted_at'`)
+- `.delete(id, sql_obj?)` – Soft delete (marks with timestamp)
+- `.listAll(sql_obj?)` → `Promise<Record<string,any>[]>` – List active rows (excludes soft-deleted)
+- `.fetch(id, sql_obj?)` → `Promise<Record<string,any>|unknown[]>` – Fetch active row (excludes soft-deleted)
+- `.list(limit, last_id, sql_obj?)` → `Promise<Record<string,any>[]>` – List active rows paginated (excludes soft-deleted)
+- `.listAllDeleted(sql_obj?)` → `Promise<Record<string,any>[]>` – List all soft-deleted rows
+- `.fetchDeleted(id, sql_obj?)` → `Promise<Record<string,any>|unknown[]>` – Fetch soft-deleted row
+- `.listDeleted(limit, last_id, sql_obj?)` → `Promise<Record<string,any>[]>` – List soft-deleted rows paginated
+- `.restore(id, sql_obj?)` – Restore soft-deleted record
+- `.hardDelete(id)` – Permanently delete record
 
 ## License
 
