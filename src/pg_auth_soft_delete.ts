@@ -1,11 +1,14 @@
+import { PG_App } from "./pg_app.js";
 import bcrypt from 'bcrypt';
-import {PG_App} from "./pg_app.js";
-import { PG_Table } from './pg_table.js';
-import {type PG_ColumnAccess} from "./pg_column_access.js";
+import { PG_SoftDeleteTable } from "./pg_soft_delete_table.js";
+import { type PG_ColumnAccess } from "./pg_column_access.js";
 
 
 
-export class PG_AuthTable extends PG_Table {
+
+
+
+export class PG_SoftDeleteAuthTable extends PG_SoftDeleteTable {
 
 
 
@@ -118,7 +121,7 @@ export class PG_AuthTable extends PG_Table {
     /**
      *   More practical method for advanced Authentication methods
      */
-    public async fetchAfterAuth(user_identifier: string, plainTextPassword: string , columns:string[], sql_obj=null ): Promise<Record<string,any>|undefined> {
+    public async fetchAfterAuth<T>(user_identifier: string, plainTextPassword: string , columns:string[], sql_obj=null ): Promise<T|undefined> {
         const sql = this.externalSql( sql_obj );
 
         for ( const column of columns ){
@@ -139,7 +142,7 @@ export class PG_AuthTable extends PG_Table {
 
         if( await bcrypt.compare(plainTextPassword, user[this.passwordField]) ){
             delete user[this.passwordField];
-            return user;
+            return user as T;
         }
     }
 

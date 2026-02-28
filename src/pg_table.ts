@@ -1,5 +1,7 @@
-import {PG_App , type PG_Connection} from "./app.js";
+import {PG_App , type PG_Connection} from "./pg_app.js";
 import {type PG_ColumnAccess} from "./pg_column_access.js";
+import type postgres from "postgres";
+
 
 
 export interface TableBase {
@@ -35,12 +37,23 @@ export class PG_Table implements TableBase {
 
 
     // used to pass sql_obj to enable executing queries with in external transactions in other functions
-    protected external_sql( sql_obj:PG_Connection | null ) {
+    protected externalSql( sql_obj:PG_Connection | null ) {
         if( ! sql_obj ) {
            return this.sql; 
         }
 
         return sql_obj;
+    }
+
+
+    protected extract<T>( result:postgres.RowList<postgres.Row[]> ): T[] {
+        return [...result] as T[];
+    }
+
+
+
+    protected extractOne<T>( result:postgres.RowList<postgres.Row[]> ): T|undefined {
+        return result[0] as T|undefined;
     }
 
 
@@ -62,7 +75,7 @@ export class PG_Table implements TableBase {
 
 
     public async insert( data:Record<string,any>, sql_obj=null ) {
-        const sql = this.external_sql( sql_obj );
+        const sql = this.externalSql( sql_obj );
 
         const keys = Object.keys( data );
 
@@ -78,49 +91,50 @@ export class PG_Table implements TableBase {
 
 
 
-    public async fetch( row_id:number , sql_obj=null) {
-        const sql = this.external_sql( sql_obj );
-
-        return await sql`SELECT ${sql(this.selectables)} FROM ${sql(this.table_name)} WHERE id=${row_id}`;
+    public async fetch<T>( row_id:number , sql_obj=null): Promise<T|undefined> {
+        const sql = this.externalSql( sql_obj );
+        return this.extractOne<T>(
+            await sql`SELECT ${sql(this.selectables)} FROM ${sql(this.table_name)} WHERE id=${row_id}`
+        );
     }
 
 
 
-    public async list(limit: number = 50, last_id:number , sql_obj=null) {
-        const sql = this.external_sql( sql_obj );
+    public async list<T>(limit: number = 50, last_id:number , sql_obj=null) {
+        const sql = this.externalSql( sql_obj );
 
         const rows_limit = Math.min( Math.round(limit) , this.max_rows_fetched);
 
-        return await sql`
+        return this.extract<T>( await sql`
             SELECT ${sql(this.selectables)}
             FROM ${sql(this.table_name)}
             LIMIT ${rows_limit}
             WHERE id > ${last_id}
-        `;
+        `);
     }
 
 
 
-    public async listAll( sql_obj=null ) {
-        const sql = this.external_sql( sql_obj );
+    public async listAll<T>( sql_obj=null ) {
+        const sql = this.externalSql( sql_obj );
 
-        return await sql`
+        return this.extract<T>(await sql`
             SELECT ${sql(this.selectables)}
             FROM ${sql(this.table_name)}
-        `;
+        `);
     }
 
 
 
     public async delete( row_id:number , sql_obj=null ) {
-        const sql = this.external_sql( sql_obj );
+        const sql = this.externalSql( sql_obj );
         return await sql`DELETE FROM ${sql(this.table_name)} WHERE id=${row_id}`;
     }
 
 
 
     public async update( row_id:number , data:Record<string,any> , sql_obj=null ) {
-        const sql = this.external_sql( sql_obj );
+        const sql = this.externalSql( sql_obj );
 
         const keys = Object.keys( data );
 

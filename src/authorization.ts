@@ -1,3 +1,5 @@
+import { PG_UnauthorizedError } from "./errors.js";
+
 export type PG_AccessChecker = ( metadata:Record<string, any> ) => Promise<boolean>
 
 
@@ -16,7 +18,7 @@ export class PG_SecureAction{
     async secureAction( action:string, metadata:Record<string, any> ) {
         const permitted = await this.actions_checkers.get(action)?.check(metadata);
         if( ! permitted ) {
-            throw new Error("Unauthorized");
+            throw new PG_UnauthorizedError("Unauthorized");
         }
     }
 

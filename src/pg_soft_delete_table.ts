@@ -1,4 +1,4 @@
-import {PG_App} from "./app.js";
+import {PG_App} from "./pg_app.js";
 import { PG_Table } from './pg_table.js';
 import {type PG_ColumnAccess} from "./pg_column_access.js";
 
@@ -7,6 +7,8 @@ import {type PG_ColumnAccess} from "./pg_column_access.js";
 
 
 export class PG_SoftDeleteTable extends PG_Table {
+
+
 
     softDeleteColumn: string = 'deleted_at';
 
@@ -18,7 +20,9 @@ export class PG_SoftDeleteTable extends PG_Table {
 
 
 
-    async delete(id: number) {
+    async delete(id: number, sql_obj=null) {
+        const sql = this.externalSql( sql_obj );
+
         return this.sql`
             UPDATE ${this.sql(this.table_name)}
             SET ${this.sql(this.softDeleteColumn)} = NOW()
@@ -28,31 +32,31 @@ export class PG_SoftDeleteTable extends PG_Table {
 
 
 
-    async listAll(sql_obj=null) {
-        const sql = this.external_sql(sql_obj);
+    async listAll<T>(sql_obj=null): Promise<T[]> {
+        const sql = this.externalSql(sql_obj);
 
-        return sql`
+        return this.extract<T>( await sql`
             SELECT ${this.sql(this.selectables)}
             FROM ${this.sql(this.table_name)}
             WHERE ${this.sql(this.softDeleteColumn)} IS NULL
-        `;
+        `);
     }
 
 
 
-    async fetch(row_id:number, sql_obj=null) {
-        const sql = this.external_sql( sql_obj );
+    async fetch<T>(row_id:number, sql_obj=null): Promise<T|undefined> {
+        const sql = this.externalSql( sql_obj );
 
-        return await sql`
+        return this.extractOne<T>( await sql`
             SELECT ${ sql(this.selectables) } FROM ${sql(this.table_name)} WHERE id=${row_id} 
             AND ${this.sql(this.softDeleteColumn)} IS NULL
-        `;
+        `);
     }
 
 
 
     async restore(id: number, sql_obj=null) {
-        const sql = this.external_sql( sql_obj );
+        const sql = this.externalSql( sql_obj );
 
         return sql`
             UPDATE ${sql(this.table_name)}
@@ -63,51 +67,53 @@ export class PG_SoftDeleteTable extends PG_Table {
 
 
 
-    async fetchDeleted(row_id:number, sql_obj=null) {
-        const sql = this.external_sql( sql_obj );
+    async fetchDeleted<T>(row_id:number, sql_obj=null): Promise<T[]> {
+        const sql = this.externalSql( sql_obj );
 
-        return await sql`
+        return this.extract<T>( await sql`
             SELECT ${ sql(this.selectables) } FROM ${sql(this.table_name)} WHERE id=${row_id}
-        `;
+            AND ${this.sql(this.softDeleteColumn)} IS NOT NULL
+        `);
     }
 
 
 
-    async listAllDeleted(row_id:number, sql_obj=null) {
-        const sql = this.external_sql( sql_obj );
+    async listAllDeleted<T>(sql_obj=null): Promise<T[]> {
+        const sql = this.externalSql( sql_obj );
 
-        return await sql`
+        return this.extract<T>( await sql`
             SELECT ${ sql(this.selectables) } FROM ${sql(this.table_name)}
-        `;
+            WHERE ${this.sql(this.softDeleteColumn)} IS NOT NULL
+        `);
     }
 
 
 
-    public async list(limit: number = 50, last_id:number , sql_obj=null) {
-        const sql = this.external_sql( sql_obj );
+    public async list<T>(limit: number = 50, last_id:number , sql_obj=null): Promise<T[]> {
+        const sql = this.externalSql( sql_obj );
         const rows_limit = Math.min( Math.round(limit) , this.max_rows_fetched);
 
-        return await sql`
+        return this.extract<T>( await sql`
             SELECT ${sql(this.selectables)}
             FROM ${sql(this.table_name)}
             LIMIT ${rows_limit}
             WHERE id > ${last_id} AND
             ${this.sql(this.softDeleteColumn)} IS NULL 
-        `;
+        ` );
     }
 
 
 
-    public async listDeleted(limit: number = 50, last_id:number , sql_obj=null) {
-        const sql = this.external_sql( sql_obj );
+    public async listDeleted<T>(limit: number = 50, last_id:number , sql_obj=null): Promise<T[]> {
+        const sql = this.externalSql( sql_obj );
         const rows_limit = Math.min( Math.round(limit) , this.max_rows_fetched);
 
-        return await sql`
+        return this.extract<T>( await sql`
             SELECT ${sql(this.selectables)}
             FROM ${sql(this.table_name)}
             LIMIT ${rows_limit}
             WHERE id > ${last_id}
-        `;
+        `);
     }
 
 
@@ -115,6 +121,7 @@ export class PG_SoftDeleteTable extends PG_Table {
     async hard_delete(id: number, sql_obj=null) {
         return super.delete(id, sql_obj);
     }
+
 
 
 }
