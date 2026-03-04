@@ -1,3 +1,4 @@
+import { PG_InvalidError } from "./errors.js";
 import {PG_App , type PG_Connection} from "./pg_app.js";
 import {type PG_ColumnAccess} from "./pg_column_access.js";
 import type postgres from "postgres";
@@ -149,6 +150,24 @@ export class PG_Table implements TableBase {
     }
 
 
+    public async insertMany(records: Record<string,any>[], sql_obj = null) {
+        const sql = this.externalSql(sql_obj);
 
+        if (records.length <= 0) {
+            throw new PG_InvalidError("there is no data to insert");
+        }
+        
+        const columns = Object.keys(records[0]!);
+        
+        return await sql`INSERT INTO ${sql(this.table_name)} ${sql(records, columns)}`;
+    }
+
+    public async set( record:Record<string,number|string> , sql_obj = null) {
+        const sql = this.externalSql(sql_obj);
+
+        const columns = Object.keys(record);
+
+        return await sql`INSERT INTO ${sql(this.table_name)} ${sql(record,columns)} ON CONFLICT (id) DO UPDATE SET ${ sql(record,columns) }`;
+    }
 }
 
